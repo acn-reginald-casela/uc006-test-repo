@@ -1,0 +1,147 @@
+"""Post an inline PR review comment through the GitHub MCP server.
+
+Unlike github_tools.py (raw REST via `requests`), this goes through the
+official GitHub MCP server (https://github.com/github/github-mcp-server)
+over the Model Context Protocol, using the Python MCP SDK (`pip install mcp`).
+
+Posting an inline comment through MCP is a 3-step "pending review" flow:
+    1. create_pending_pull_request_review  — opens a draft review
+    2. add_comment_to_pending_review        — attaches one inline comment to it
+    3. submit_pending_pull_request_review   — submits the draft (event=COMMENT)
+
+Tool names/params can shift between github-mcp-server versions — call
+`list_available_tools()` against your running server to confirm them before
+relying on this in production.
+
+Requires:
+    GITHUB_PERSONAL_ACCESS_TOKEN (or GITHUB_TOKEN)  — token the MCP server
+                                                       uses to call the GitHub API
+    Docker (default transport below), or a local `github-mcp-server` binary
+"""
+
+import os
+import asyncio
+from dotenv import load_dotenv
+
+from mcp import ClientSession, StdioServerParameters
+from mcp.client.stdio import stdio_client
+
+load_dotenv()
+
+TOKEN = os.environ.get("GITHUB_PERSONAL_ACCESS_TOKEN") or os.environ.get("GITHUB_TOKEN")
+OWNER = os.environ.get("OWNER")
+REPO = os.environ.get("REPO")
+
+# Default transport: run the official server image via Docker, stdio-piped.
+# Swap `command`/`args` for a local binary, e.g. command="github-mcp-server", args=["stdio"].
+SERVER_PARAMS = StdioServerParameters(
+    command="docker",
+    args=[
+        "run", "-i", "--rm",
+        "-e", "GITHUB_PERSONAL_ACCESS_TOKEN",
+        "ghcr.io/github/github-mcp-server",
+    ],
+    env={"GITHUB_PERSONAL_ACCESS_TOKEN": TOKEN or ""},
+)
+
+
+async def _call(session: ClientSession, tool: str, arguments: dict):
+    result = await session.call_tool(tool, arguments=arguments)
+    if getattr(result, "isError", False):
+        raise RuntimeError(f"MCP tool '{tool}' failed: {result.content}")
+    return result
+
+
+async def post_pr_inline_comment_async(
+    pull_number: int,
+    path: str,
+    line: int,
+    body: str,
+    side: str = "RIGHT",
+    owner: str | None = None,
+    repo: str | None = None,
+    commit_id: str | None = None,
+    start_line: int | None = None,
+    start_side: str | None = None,
+) -> dict:
+    """
+    Post a single inline review comment on a PR via the GitHub MCP server.
+
+    Args:
+        pull_number: PR number to comment on.
+        path:        Relative file path, e.g. "src/main.py".
+        line:        Line number in the PR diff to attach the comment to
+                     (must appear in the diff — added, or context near a change).
+        body:        Comment text.
+        side:        "RIGHT" (new/added version, most common) or "LEFT" (old version).
+        owner/repo:  Defaults to OWNER/REPO env vars if omitted.
+        commit_id:   Optional. Defaults to the PR's current head commit if omitted.
+        start_line/start_side: Optional, for a multi-line comment spanning
+                                start_line..line.
+
+    Returns:
+        The result of submit_pending_pull_request_review (the created review).
+    """
+    owner = owner or OWNER
+    repo = repo or REPO
+    if not TOKEN:
+        raise ValueError("Set GITHUB_PERSONAL_ACCESS_TOKEN (or GITHUB_TOKEN).")
+    if not owner or not repo:
+        raise ValueError("Set OWNER and REPO (env vars or arguments).")
+
+    async with stdio_client(SERVER_PARAMS) as (read, write):
+        async with ClientSession(read, write) as session:
+            await session.initialize()
+
+            pending_args = {"owner": owner, "repo": repo, "pullNumber": pull_number}
+            if commit_id:
+                pending_args["commitID"] = commit_id
+            await _call(session, "create_pending_pull_request_review", pending_args)
+
+            comment_args = {
+                "owner": owner,
+                "repo": repo,
+                "pullNumber": pull_number,
+                "path": path,
+                "body": body,
+                "subjectType": "LINE",
+                "line": line,
+                "side": side,
+            }
+            if start_line is not None:
+                comment_args["startLine"] = start_line
+                comment_args["startSide"] = start_side or side
+            await _call(session, "add_comment_to_pending_review", comment_args)
+
+            submitted = await _call(
+                session,
+                "submit_pending_pull_request_review",
+                {"owner": owner, "repo": repo, "pullNumber": pull_number, "event": "COMMENT"},
+            )
+            return submitted
+
+
+def post_pr_inline_comment(pull_number: int, path: str, line: int, body: str, **kwargs) -> dict:
+    """Sync wrapper around post_pr_inline_comment_async — see that docstring."""
+    return asyncio.run(
+        post_pr_inline_comment_async(pull_number, path, line, body, **kwargs)
+    )
+
+
+async def list_available_tools() -> list[str]:
+    """Debug helper: list tool names the connected MCP server actually exposes."""
+    async with stdio_client(SERVER_PARAMS) as (read, write):
+        async with ClientSession(read, write) as session:
+            await session.initialize()
+            tools = await session.list_tools()
+            return [t.name for t in tools.tools]
+
+
+if __name__ == "__main__":
+    result = post_pr_inline_comment(
+        pull_number=1,
+        path="sample2.py",
+        line=3,
+        body="Posted via GitHub MCP server.",
+    )
+    print(result)
