@@ -1,0 +1,24 @@
+# Agent orchestration (agent.py, pipeline.py, agents/, prompts/)
+google-adk==2.7.1
+google-genai==2.19.0
+
+# HTTP API (main_runner.py) -- flask[async] pulls in asgiref, required for
+# the async def view functions used there
+flask[async]==3.1.3
+pydantic==2.12.5
+
+# Config (config.py)
+python-dotenv==1.2.2
+
+# Jira integration (tools/jira_tools.py)
+requests==2.33.1
+
+# GCP clients (tools/bigquery_tools.py, services/clients.py,
+# services/bigquery.py, services/vector_search.py)
+google-cloud-bigquery==3.45.1
+google-cloud-storage==3.14.1
+google-cloud-aiplatform==2.1.3
+google-api-core
+
+# Production WSGI server (Dockerfile CMD)
+gunicorn==26.2.0
