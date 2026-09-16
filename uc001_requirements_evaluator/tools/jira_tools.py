@@ -1,4 +1,11 @@
 import os
+import sys
+
+if __name__ == "__main__":
+    # Run directly (e.g. `py .\jira_tools.py`), so uc001_requirements_evaluator
+    # isn't on sys.path yet -- add the repo root (two levels up from this file).
+    sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
+
 import requests
 from uc001_requirements_evaluator.config import JIRA_BASE_URL, JIRA_EMAIL, JIRA_API_TOKEN
 

@@ -1,12 +1,16 @@
 # REFERENCE STUB — validate against current google-adk 2.x docs
 from google.adk.agents import Agent
+from google.adk.tools import FunctionTool
 
 from uc001_requirements_evaluator.config import PRO_MODEL
 from uc001_requirements_evaluator.prompts.evaluator import get_instructions
 from uc001_requirements_evaluator.constants import StateKey
 from uc001_requirements_evaluator.tools.after_evaluate import stop_loop_if_approved
+from uc001_requirements_evaluator.tools.vertex_search import retrieve_clauses
 
-# Data Agent: emits a GENERATION SPEC, never rows. A deterministic engine makes volume.
+retrieve_clauses_tool = FunctionTool(func=retrieve_clauses)
+
+# Evaluator agent
 def build_evaluator_agent() -> Agent:
     """
     Build the Evaluator Agent.
@@ -21,10 +25,10 @@ def build_evaluator_agent() -> Agent:
     """
     return Agent(
         model=PRO_MODEL,
-        name="data_agent",
+        name="evaluator_agent",
         instruction=get_instructions(),
-        description="Scores the test cases against the CRITERIA rubric.",
+        description="Scores the requirements against the CRITERIA rubric.",
         output_key = StateKey.EVALUATOR,
-        after_agent_callback=stop_loop_if_approved
-
+        after_agent_callback=stop_loop_if_approved,
+        tools = [retrieve_clauses_tool]
     )
