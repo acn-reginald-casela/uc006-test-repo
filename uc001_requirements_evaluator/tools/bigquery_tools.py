@@ -59,3 +59,27 @@ def query_table(
     job_config = bigquery.QueryJobConfig(query_parameters=query_parameters)
     rows = client.query(query, job_config=job_config).result()
     return [dict(row) for row in rows]
+
+
+def insert_row(row: dict, table: str, dataset: str = DATASET, project: str = PROJECT_ID) -> None:
+    """
+    Insert a single row into a BigQuery table.
+
+    Args:
+        row: Mapping of column -> value to insert.
+        table: Name of the table to insert into.
+        dataset: Dataset containing the table. Defaults to DATASET.
+        project: GCP project the dataset lives in. Defaults to PROJECT_ID.
+
+    Raises:
+        RuntimeError: If BigQuery rejects the row (e.g. schema mismatch).
+    """
+    for identifier in (project, dataset, table):
+        if not _IDENTIFIER_RE.match(identifier):
+            raise ValueError(f"Invalid BigQuery identifier: {identifier!r}")
+
+    client = bigquery.Client(project=project)
+    table_ref = f"{project}.{dataset}.{table}"
+    errors = client.insert_rows_json(table_ref, [row])
+    if errors:
+        raise RuntimeError(f"Failed to insert row into {table_ref}: {errors}")

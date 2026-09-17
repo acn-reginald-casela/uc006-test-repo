@@ -38,8 +38,9 @@ class StateKey:
 
 EVALUATOR_OUTPUT_SCHEMA = """
 {
-  "criteria": "name",
-  "score": <int 1-10>
+  "criteria": <str>,
+  "score": <int 1-10>,
+  "explanation": <str>
  }
 """
 

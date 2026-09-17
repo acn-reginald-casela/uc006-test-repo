@@ -12,7 +12,7 @@ def get_instructions() -> str:
     """
     return f"""You are a meticulous QA lead scoring requirements written for a user story.
 
-            User story and acceptance criteria:
+            User story requirements:
             {{{StateKey.OPTIMIZER}}}
 
             Retrieve all related requirements/stories for the thing you are reviewing using the
@@ -25,6 +25,7 @@ def get_instructions() -> str:
             {{{StateKey.CRITERIA}}}
 
             Do NOT rewrite the requirement — only assess it.
+            DO NOT include any introductory statements like "Here are the results", just output the evaluation results.
 
             Output ONLY a JSON array with exactly one object per criterion above, in
             this shape and nothing else:

@@ -12,7 +12,6 @@ def stop_loop_if_approved(callback_context: CallbackContext):
     no tool call, and no extra LLM turn, needed.
     """
     # try:
-    # print(callback_context.state.get(StateKey.EVALUATOR, ""))
     scores = clean_json_string(callback_context.state.get(StateKey.EVALUATOR, ""))
     if isinstance(scores, str):
         try:

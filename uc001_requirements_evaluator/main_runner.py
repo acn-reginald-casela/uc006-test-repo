@@ -53,6 +53,7 @@ Run:
 """
 
 import json
+import time
 from typing import Optional
 
 from flask import Flask, request
@@ -66,7 +67,8 @@ import uc001_requirements_evaluator.tools.bigquery_tools as bq
 from uc001_requirements_evaluator.pipeline import build_pipeline
 from uc001_requirements_evaluator.config import RUBRIC_VERSION
 from uc001_requirements_evaluator.tools.jira_tools import get_jira_issue, add_jira_comment
-from uc001_requirements_evaluator.tools.formatter import format_to_readable
+from uc001_requirements_evaluator.tools.formatter import format_to_readable, clean_json_string
+from uc001_requirements_evaluator.tools.bigquery_tools import insert_row
 # The rubric the critic scores the test cases against, 1 (very poor) to
 # 10 (excellent) per criterion. Edit this dict to change what gets scored --
 # both the critic's instruction and the approval check below read from it.
@@ -87,6 +89,18 @@ session_service = InMemorySessionService()
 runner = Runner(agent=root_agent, app_name=APP_NAME, session_service=session_service)
 
 app = Flask("UC001")
+
+
+async def _run_agent_timed(user_id: str, session_id: str, new_message) -> None:
+    """Run the agent pipeline to completion, logging how long the whole run took."""
+    start = time.perf_counter()
+    async for _event in runner.run_async(
+        user_id=user_id, session_id=session_id, new_message=new_message
+    ):
+        pass  # the result we care about lives in session state, not the events
+    elapsed = time.perf_counter() - start
+    print(f"Agent run took {elapsed:.2f} seconds")
+    return elapsed
 
 class Story(BaseModel):
     id: str
@@ -131,32 +145,33 @@ async def generate_test_cases():
         )
 
     trigger_message = types.Content(
-        role="user", parts=[types.Part(text="Generate the test cases.")]
+        role="user", parts=[types.Part(text=requirements)]
     )
 
-    async for _event in runner.run_async(
-        user_id=user_id, session_id=session_id, new_message=trigger_message
-    ):
-        pass  # the result we care about lives in session state, not the events
+    run_time = await _run_agent_timed(user_id, session_id, trigger_message)
 
     session = await session_service.get_session(
         app_name=APP_NAME, user_id=user_id, session_id=session_id
     )
-    raw_scores = session.state.get(StateKey.EVALUATOR, "")
-    try:
-        scores = json.loads(raw_scores)
-    except (TypeError, ValueError):
-        scores = raw_scores  # critic didn't return valid JSON; pass the raw text through
-    print("This is the final dimension scores", scores)
+    scores = clean_json_string(session.state.get(StateKey.EVALUATOR, ""))
 
     # Create a comment on the JIRA ticket with the refined requirements
-    add_jira_comment(story_id, session.state.get(StateKey.OPTIMIZER))    
+    add_jira_comment(story_id, session.state.get(StateKey.OPTIMIZER))
+
+    row_entry = {
+        "session_id": session_id,
+        "story_id": story_id,
+        "evaluation": scores,
+        "result": session.state.get(StateKey.OPTIMIZER),
+        "duration": int(run_time)
+    }
+
+    insert_row(row_entry, "results")
 
     return {
         "story_id": session.state.get(StateKey.STORY_ID),
         "final_requirement": session.state.get(StateKey.OPTIMIZER)
     }
-
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8080, debug=True)
