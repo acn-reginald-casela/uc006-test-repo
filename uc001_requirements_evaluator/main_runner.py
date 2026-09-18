@@ -69,16 +69,6 @@ from uc001_requirements_evaluator.config import RUBRIC_VERSION
 from uc001_requirements_evaluator.tools.jira_tools import get_jira_issue, add_jira_comment
 from uc001_requirements_evaluator.tools.formatter import format_to_readable, clean_json_string
 from uc001_requirements_evaluator.tools.bigquery_tools import insert_row
-# The rubric the critic scores the test cases against, 1 (very poor) to
-# 10 (excellent) per criterion. Edit this dict to change what gets scored --
-# both the critic's instruction and the approval check below read from it.
-CRITERIA = {
-    "Coverage of Acceptance Criteria": "does every AC-# in the story have at least one test case?",
-    "Clarity": "is each test case unambiguous about its steps and expected result?",
-    "Testability": "can each test case be executed and verified objectively?",
-    "Consistency": "do the test cases avoid contradicting each other or the story?",
-}
-APPROVAL_SCORE_THRESHOLD = 8
 
 APP_NAME = "loop_agent_demo"
 
@@ -105,7 +95,6 @@ async def _run_agent_timed(user_id: str, session_id: str, new_message) -> None:
 class Story(BaseModel):
     id: str
     requirements: Optional[str] = None
-
 
 class GenerateTestCasesRequest(BaseModel):
     story: Story

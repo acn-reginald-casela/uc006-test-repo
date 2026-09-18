@@ -104,4 +104,49 @@ SAMPLE_READABLE_CRITERIA = """
   Pass example: The system must maintain 99.9 percent uptime per calendar month, measured across all production regions.
   """
 
+SAMPLE_DIMENSIONS = [{
+        "name": "unambiguous",
+        "weight": 0.2,
+        "pass_threshold": 0.85,
+        "description": "The requirement has exactly one reasonable interpretation. Flag vague qualifiers (fast, user-friendly, appropriate, robust, seamless) that have no measurable definition attached.",
+        "fail_example": "The system should respond quickly to user requests.",
+        "pass_example": "The system must return a search response within 500ms at the 95th percentile under normal load."
+    }, {
+        "name": "complete",
+        "weight": 0.2,
+        "pass_threshold": 0.85,
+        "description": "All information needed to implement and test the requirement is present: actor, trigger/condition, expected outcome, and relevant constraints. Nothing critical is left implied.",
+        "fail_example": "Users can cancel an order.",
+        "pass_example": "A logged-in customer can cancel an order within 15 minutes of placing it, provided the order has not yet been marked as shipped."
+    }, {
+        "name": "consistent",
+        "weight": 0.15,
+        "pass_threshold": 0.85,
+        "description": "Does not contradict sibling requirements retrieved from the backlog. Check stated numbers, timeframes, and rules against related requirements for the same feature area.",
+        "fail_example": "Refunds must be processed within 3 business days. (contradicts REQ-2004: ' Refunds must be issued within 5 business days.')",
+        "pass_example": "Refunds must be processed within 5 business days, consistent with the existing refund policy (REQ-2004)."
+    }, {
+        "name": "verifiable",
+        "weight": 0.2,
+        "pass_threshold": 0.85,
+        "description": "A tester could write a concrete pass/fail test case directly from the wording alone, with no subjective judgment call required.",
+        "fail_example": "The dashboard should load in a reasonable amount of time.",
+        "pass_example": "The dashboard must fully render within 2 seconds on a standard broadband connection (10 Mbps+)."
+    }, {
+        "name": "atomic",
+        "weight": 0.15,
+        "pass_threshold": 0.85,
+        "description": "Expresses exactly one requirement. Sentences joined by ' and '/' or ' that bundle two independently testable rules should be flagged and split into separate requirements.",
+        "fail_example": "Users can edit their profile and admins can deactivate accounts.",
+        "pass_example": "Users can edit their own profile information (name, email, avatar) while logged in."
+    }, {
+        "name": "feasible",
+        "weight": 0.1,
+        "pass_threshold": 0.75,
+        "description": "Does not demand something technically or practically impossible given stated or known system constraints. Lower confidence dimension — an LLM cannot fully verify feasibility without deep system context, so treat borderline calls as OPEN_QUESTIONS rather than hard fails.",
+        "fail_example": "The system must guarantee zero downtime with zero cost and instant global consistency across all regions.",
+        "pass_example": "The system must maintain 99.9 percent uptime per calendar month, measured across all production regions."
+    }
+]
+
 SAMPLE_REQUIREMENT = "An evaluator–optimizer loop reviews each requirement at intake. An Evaluator scores it against an explicit quality rubric — unambiguous, complete, consistent, testable, atomic — and an Optimizer rewrites it to close the specific defects, cycling until the bar is met or a guard stops it. Defects that need a business decision are flagged as open questions rather than invented. The value is rework prevented: requirement defects caught at intake instead of surfacing in testing orproduction, where remediation costs multiples more."
