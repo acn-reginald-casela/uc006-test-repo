@@ -54,6 +54,7 @@ Run:
 
 import json
 import time
+from dataclasses import dataclass, field
 from typing import Optional
 
 from flask import Flask, request
@@ -65,7 +66,7 @@ from google.adk.sessions import InMemorySessionService
 from uc001_requirements_evaluator.constants import RUBRIC_TABLE, StateKey, SAMPLE_READABLE_CRITERIA, SAMPLE_REQUIREMENT
 import uc001_requirements_evaluator.tools.bigquery_tools as bq
 from uc001_requirements_evaluator.pipeline import build_pipeline
-from uc001_requirements_evaluator.config import RUBRIC_VERSION
+from uc001_requirements_evaluator.config import RUBRIC_VERSION, FLASH_MODEL, PRO_MODEL
 from uc001_requirements_evaluator.tools.jira_tools import get_jira_issue, add_jira_comment
 from uc001_requirements_evaluator.tools.formatter import format_to_readable, clean_json_string
 from uc001_requirements_evaluator.tools.bigquery_tools import insert_row
@@ -81,16 +82,48 @@ runner = Runner(agent=root_agent, app_name=APP_NAME, session_service=session_ser
 app = Flask("UC001")
 
 
-async def _run_agent_timed(user_id: str, session_id: str, new_message) -> None:
-    """Run the agent pipeline to completion, logging how long the whole run took."""
+@dataclass
+class TokenUsage:
+    """Accumulates token usage across every LLM call made during a pipeline run."""
+
+    prompt_tokens: int = 0
+    candidates_tokens: int = 0
+    thoughts_tokens: int = 0
+    total_tokens: int = 0
+    by_agent: dict[str, int] = field(default_factory=dict)
+
+    def get_cost(self) -> float:
+        return round((self.total_tokens / 10000) * 0.1, 3)
+
+    def add(self, author: str, usage_metadata) -> None:
+        self.prompt_tokens += usage_metadata.prompt_token_count or 0
+        self.candidates_tokens += usage_metadata.candidates_token_count or 0
+        self.thoughts_tokens += usage_metadata.thoughts_token_count or 0
+        self.total_tokens += usage_metadata.total_token_count or 0
+        self.by_agent[author] = self.by_agent.get(author, 0) + (usage_metadata.total_token_count or 0)
+
+    def as_dict(self) -> dict:
+        return {
+            "prompt_tokens": self.prompt_tokens,
+            "candidates_tokens": self.candidates_tokens,
+            "thoughts_tokens": self.thoughts_tokens,
+            "total_tokens": self.total_tokens,
+            "by_agent": self.by_agent,
+        }
+
+
+async def _run_agent_timed(user_id: str, session_id: str, new_message) -> tuple[float, TokenUsage]:
+    """Run the agent pipeline to completion, logging duration and token usage."""
     start = time.perf_counter()
-    async for _event in runner.run_async(
+    usage = TokenUsage()
+    async for event in runner.run_async(
         user_id=user_id, session_id=session_id, new_message=new_message
     ):
-        pass  # the result we care about lives in session state, not the events
+        if event.usage_metadata is not None:
+            usage.add(event.author, event.usage_metadata)
     elapsed = time.perf_counter() - start
-    print(f"Agent run took {elapsed:.2f} seconds")
-    return elapsed
+    print(f"Agent run took {elapsed:.2f} seconds, used {usage.total_tokens} tokens {usage.by_agent}")
+    return elapsed, usage
 
 class Story(BaseModel):
     id: str
@@ -137,7 +170,7 @@ async def generate_test_cases():
         role="user", parts=[types.Part(text=requirements)]
     )
 
-    run_time = await _run_agent_timed(user_id, session_id, trigger_message)
+    run_time, token_usage = await _run_agent_timed(user_id, session_id, trigger_message)
 
     session = await session_service.get_session(
         app_name=APP_NAME, user_id=user_id, session_id=session_id
@@ -149,17 +182,22 @@ async def generate_test_cases():
 
     row_entry = {
         "session_id": session_id,
+        "initial_req": requirements,
         "story_id": story_id,
         "evaluation": scores,
         "result": session.state.get(StateKey.OPTIMIZER),
-        "duration": int(run_time)
+        "duration": int(run_time),
+        "model": FLASH_MODEL,
+        "tokens_usage": token_usage.as_dict(),
+        "total_cost": token_usage.get_cost()
     }
 
     insert_row(row_entry, "results")
 
     return {
         "story_id": session.state.get(StateKey.STORY_ID),
-        "final_requirement": session.state.get(StateKey.OPTIMIZER)
+        "final_requirement": session.state.get(StateKey.OPTIMIZER),
+        "token_usage": token_usage.as_dict()
     }
 
 if __name__ == "__main__":

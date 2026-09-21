@@ -25,8 +25,12 @@ VERTEX_LOCATION = os.environ.get("GOOGLE_CLOUD_LOCATION", "us-central1")
 # Flash  → three parallel designers (fast, low cost)
 # Pro    → analyzer + consolidator (heavier reasoning)
 # Both point to Flash here; swap PRO_MODEL to "gemini-1.5-pro" for production.
-FLASH_MODEL = os.environ.get("FLASH_MODEL", "gemini-3.6-flash")
-PRO_MODEL   = os.environ.get("PRO_MODEL",   "gemini-3.6-flash")
+FLASH_MODEL = os.environ.get("FLASH_MODEL", "gemini-2.5-flash")
+PRO_MODEL   = os.environ.get("PRO_MODEL",   "gemini-2.5-pro")
+
+# ── Prompt IDs ───────────────────────────────────────────────────────────────
+EVALUATOR_PROMPT_ID = os.environ.get("EVALUATOR_PROMPT_ID", "UC001_evaluator")
+OPTIMIZER_PROMPT_ID = os.environ.get("OPTIMIZER_PROMPT_ID", "UC001_optimizer")
 
 # ── Policy corpus / RAG ──────────────────────────────────────────────────────
 EMBEDDING_MODEL     = os.environ.get("EMBEDDING_MODEL", "text-embedding-005")

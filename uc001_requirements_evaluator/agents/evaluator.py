@@ -2,11 +2,14 @@
 from google.adk.agents import Agent
 from google.adk.tools import FunctionTool
 
-from uc001_requirements_evaluator.config import PRO_MODEL
-from uc001_requirements_evaluator.prompts.evaluator import get_instructions
+from uc001_requirements_evaluator.config import FLASH_MODEL, EVALUATOR_PROMPT_ID, PRO_MODEL
+# from uc001_requirements_evaluator.prompts.evaluator import get_instructions
 from uc001_requirements_evaluator.constants import StateKey
+from google.adk.planners import BuiltInPlanner
+from google.genai import types
 from uc001_requirements_evaluator.tools.after_evaluate import stop_loop_if_approved
 from uc001_requirements_evaluator.tools.vertex_search import retrieve_clauses
+from uc001_requirements_evaluator.tools.prompt_tools import get_prompt
 
 retrieve_clauses_tool = FunctionTool(func=retrieve_clauses)
 
@@ -24,11 +27,17 @@ def build_evaluator_agent() -> Agent:
         Agent ready to be used as the first sub-agent in SequentialAgent.
     """
     return Agent(
-        model=PRO_MODEL,
+        model=FLASH_MODEL,
         name="evaluator_agent",
-        instruction=get_instructions(),
+        instruction=get_prompt(EVALUATOR_PROMPT_ID),
         description="Scores the requirements against the CRITERIA rubric.",
         output_key = StateKey.EVALUATOR,
         after_agent_callback=stop_loop_if_approved,
-        tools = [retrieve_clauses_tool]
+        tools = [retrieve_clauses_tool],
+        planner = BuiltInPlanner(
+            thinking_config = types.ThinkingConfig(
+                include_thoughts=True,
+                thinking_budget= 1024
+            )
+        )
     )
