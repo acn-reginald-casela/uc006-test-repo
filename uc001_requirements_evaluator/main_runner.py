@@ -81,6 +81,14 @@ runner = Runner(agent=root_agent, app_name=APP_NAME, session_service=session_ser
 
 app = Flask("UC001")
 
+# $ per 10k tokens, keyed by the model name it appears under in event.model_version
+# (e.g. "gemini-2.5-flash-002" for FLASH_MODEL="gemini-2.5-flash"). Placeholder
+# rates -- swap in the real published per-model price before relying on this.
+MODEL_COST_PER_10K_TOKENS = {
+    FLASH_MODEL: 0.0250,
+    PRO_MODEL: 0.1000,
+}
+
 
 @dataclass
 class TokenUsage:
@@ -91,16 +99,27 @@ class TokenUsage:
     thoughts_tokens: int = 0
     total_tokens: int = 0
     by_agent: dict[str, int] = field(default_factory=dict)
+    by_model: dict[str, int] = field(default_factory=dict)
 
     def get_cost(self) -> float:
-        return round((self.total_tokens / 10000) * 0.1, 3)
+        cost = 0.0
+        print("Tokens per model:\n", self.by_model)
+        for model_version, tokens in self.by_model.items():
+            rate = next(
+                (rate for model, rate in MODEL_COST_PER_10K_TOKENS.items() if model in model_version),
+                MODEL_COST_PER_10K_TOKENS[FLASH_MODEL],
+            )
+            cost += (tokens / 10000) * rate
+        return round(cost, 3)
 
-    def add(self, author: str, usage_metadata) -> None:
+    def add(self, author: str, model_version: str, usage_metadata) -> None:
+        tokens = usage_metadata.total_token_count or 0
         self.prompt_tokens += usage_metadata.prompt_token_count or 0
         self.candidates_tokens += usage_metadata.candidates_token_count or 0
         self.thoughts_tokens += usage_metadata.thoughts_token_count or 0
-        self.total_tokens += usage_metadata.total_token_count or 0
-        self.by_agent[author] = self.by_agent.get(author, 0) + (usage_metadata.total_token_count or 0)
+        self.total_tokens += tokens
+        self.by_agent[author] = self.by_agent.get(author, 0) + tokens
+        self.by_model[model_version or "unknown"] = self.by_model.get(model_version or "unknown", 0) + tokens
 
     def as_dict(self) -> dict:
         return {
@@ -108,7 +127,7 @@ class TokenUsage:
             "candidates_tokens": self.candidates_tokens,
             "thoughts_tokens": self.thoughts_tokens,
             "total_tokens": self.total_tokens,
-            "by_agent": self.by_agent,
+            "by_agent": self.by_agent
         }
 
 
@@ -120,7 +139,7 @@ async def _run_agent_timed(user_id: str, session_id: str, new_message) -> tuple[
         user_id=user_id, session_id=session_id, new_message=new_message
     ):
         if event.usage_metadata is not None:
-            usage.add(event.author, event.usage_metadata)
+            usage.add(event.author, event.model_version, event.usage_metadata)
     elapsed = time.perf_counter() - start
     print(f"Agent run took {elapsed:.2f} seconds, used {usage.total_tokens} tokens {usage.by_agent}")
     return elapsed, usage
