@@ -39,7 +39,6 @@ def get_prompt(key: str) -> str:
         raise ValueError(f"Prompt {prompt_id!r} has no prompt text.")
 
     prompt_val = "".join(part["text"] for part in contents[0].get("parts", []) if "text" in part)
-    print(prompt_val)
     return prompt_val
 
 
