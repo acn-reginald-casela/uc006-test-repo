@@ -55,6 +55,7 @@ Run:
 import json
 import time
 from dataclasses import dataclass, field
+from functools import lru_cache
 from typing import Optional
 
 from flask import Flask, request
@@ -66,20 +67,108 @@ from google.adk.sessions import InMemorySessionService
 from uc001_requirements_evaluator.constants import RUBRIC_TABLE, StateKey, SAMPLE_READABLE_CRITERIA, SAMPLE_REQUIREMENT
 import uc001_requirements_evaluator.tools.bigquery_tools as bq
 from uc001_requirements_evaluator.pipeline import build_pipeline
-from uc001_requirements_evaluator.config import RUBRIC_VERSION, FLASH_MODEL, PRO_MODEL
+from uc001_requirements_evaluator.config import RUBRIC_VERSION, FLASH_MODEL, PRO_MODEL, EVALUATOR_PROMPT_ID, OPTIMIZER_PROMPT_ID
 from uc001_requirements_evaluator.tools.jira_tools import get_jira_issue, add_jira_comment
 from uc001_requirements_evaluator.tools.formatter import format_to_readable, clean_json_string
 from uc001_requirements_evaluator.tools.bigquery_tools import insert_row
+from uc001_requirements_evaluator.tools.prompt_tools import get_prompt
 
 APP_NAME = "loop_agent_demo"
 
+# Maps each ADK agent's runtime name (callback_context.agent_name) to the
+# Prompt Management key it was built from (see agents/evaluator.py and
+# agents/optimizer.py, which fetch these same keys via get_prompt()).
+AGENT_PROMPT_KEYS = {
+    "evaluator_agent": EVALUATOR_PROMPT_ID,
+    "optimizer_agent": OPTIMIZER_PROMPT_ID,
+}
+
+
+@lru_cache(maxsize=None)
+def _agent_prompt(agent_name: str) -> str:
+    """The registered instruction prompt for this agent, fetched once per agent and cached."""
+    return get_prompt(AGENT_PROMPT_KEYS[agent_name])
+
+
+def _extract_text(content) -> str:
+    """Joins a google.genai Content's text parts into one string, skipping
+    thinking parts (part.thought=True) -- both agents run with
+    include_thoughts=True, so a response's parts otherwise mix the model's
+    reasoning trace in with its actual answer."""
+    if not content or not content.parts:
+        return ""
+    return "".join(part.text or "" for part in content.parts if not part.thought)
+
+
+def log_inference_to_bigquery(callback_context, llm_response) -> None:
+    """
+    after_model_callback: inserts the prompt/response pair for every actual
+    LLM call into BigQuery -- one row per model round-trip, not just the
+    pipeline's final output. The "prompt" logged is the agent's registered
+    instruction (via prompt_tools.get_prompt, keyed by agent name), not the
+    per-turn conversation content. Skips logging if the response came back
+    as pure thinking with no answer text.
+    """
+    response = _extract_text(llm_response.content)
+    if not response:
+        return
+
+    prompt = _agent_prompt(callback_context.agent_name)
+
+    insert_row(
+        {
+            "invocation_id": callback_context.invocation_id,
+            "session_id": callback_context.session.id,
+            "agent": callback_context.agent_name,
+            "prompt": prompt,
+            "response": response,
+            "timestamp": int(time.time()),
+        },
+        "llm_inferences",
+    )
+
+
+def log_final_requirement(session_id: str, final_requirement: str, agent_name: str = "optimizer_agent") -> None:
+    """
+    Inserts the pipeline's final requirement into BigQuery, using the same
+    schema as log_inference_to_bigquery -- one row for the loop's end result
+    (what /test-cases actually returns as "final_requirement"), rather than
+    one row per individual LLM call made along the way.
+    """
+    if not final_requirement:
+        return
+
+    insert_row(
+        {
+            "invocation_id": session_id,
+            "session_id": session_id,
+            "agent": agent_name,
+            "prompt": _agent_prompt(agent_name),
+            "response": final_requirement,
+            "timestamp": int(time.time()),
+        },
+        "llm_inferences",
+    )
+
+
 #   Build the main loop agent
 root_agent = build_pipeline()
+
+#   Log every LLM call each sub-agent makes (prompt in, response out) to BigQuery
+# for sub_agent in root_agent.sub_agents:
+#     sub_agent.after_model_callback = log_inference_to_bigquery
+
 #   Create the session
 session_service = InMemorySessionService()
 runner = Runner(agent=root_agent, app_name=APP_NAME, session_service=session_service)
 
-app = Flask("UC001")
+app = Flask(__name__, static_folder="static", static_url_path="")
+
+
+@app.route("/")
+def index():
+    """Serves the simple HTML/CSS/JS frontend for submitting a story and viewing results."""
+    return app.send_static_file("index.html")
 
 # $ per 10k tokens, keyed by the model name it appears under in event.model_version
 # (e.g. "gemini-2.5-flash-002" for FLASH_MODEL="gemini-2.5-flash"). Placeholder
@@ -213,9 +302,12 @@ async def generate_test_cases():
 
     insert_row(row_entry, "results")
 
+    final_requirement = session.state.get(StateKey.OPTIMIZER)
+    log_final_requirement(session_id, final_requirement)
+
     return {
         "story_id": session.state.get(StateKey.STORY_ID),
-        "final_requirement": session.state.get(StateKey.OPTIMIZER),
+        "final_requirement": final_requirement,
         "token_usage": token_usage.as_dict()
     }
 

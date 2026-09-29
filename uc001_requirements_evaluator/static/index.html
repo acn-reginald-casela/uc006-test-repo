@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>UC001 Requirements Evaluator</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="page">
+    <header>
+      <h1>Requirements Evaluator</h1>
+      <p class="subtitle">Submit a user story and let the Evaluator / Optimizer loop refine it against the rubric.</p>
+    </header>
+
+    <main>
+      <section class="card">
+        <form id="story-form">
+          <label for="story-id">Story ID</label>
+          <input type="text" id="story-id" name="story-id" placeholder="US-142" required />
+
+          <label for="session-id">Session ID</label>
+          <input type="text" id="session-id" name="session-id" placeholder="regie_123" required />
+
+          <label for="requirements">Requirements</label>
+          <textarea
+            id="requirements"
+            name="requirements"
+            rows="10"
+            placeholder="As a ..., I want ..., so that ...&#10;&#10;Acceptance Criteria:&#10;  AC-1: ..."
+          ></textarea>
+          <p class="hint">Leave blank to pull the description from JIRA using the Story ID.</p>
+
+          <button type="submit" id="submit-btn">Run evaluation</button>
+        </form>
+      </section>
+
+      <section class="card" id="status-card" hidden>
+        <div id="loading" class="loading" hidden>
+          <div class="spinner"></div>
+          <span>Running the refinement loop&hellip; this can take a while.</span>
+        </div>
+        <div id="error" class="error" hidden></div>
+      </section>
+
+      <section class="card" id="result-card" hidden>
+        <h2>Result</h2>
+        <dl class="meta">
+          <dt>Story ID</dt>
+          <dd id="result-story-id"></dd>
+        </dl>
+
+        <h3>Final Requirement</h3>
+        <pre id="result-final-requirement" class="requirement"></pre>
+
+        <h3>Token Usage</h3>
+        <div class="token-grid">
+          <div class="token-tile">
+            <span class="token-label">Prompt</span>
+            <span class="token-value" id="tok-prompt">0</span>
+          </div>
+          <div class="token-tile">
+            <span class="token-label">Candidates</span>
+            <span class="token-value" id="tok-candidates">0</span>
+          </div>
+          <div class="token-tile">
+            <span class="token-label">Thoughts</span>
+            <span class="token-value" id="tok-thoughts">0</span>
+          </div>
+          <div class="token-tile">
+            <span class="token-label">Total</span>
+            <span class="token-value" id="tok-total">0</span>
+          </div>
+        </div>
+
+        <h3>By Agent</h3>
+        <table class="agent-table">
+          <thead>
+            <tr><th>Agent</th><th>Tokens</th></tr>
+          </thead>
+          <tbody id="agent-table-body"></tbody>
+        </table>
+      </section>
+    </main>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

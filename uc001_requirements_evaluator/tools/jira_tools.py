@@ -132,28 +132,31 @@ def get_jira_issue(issue_key: str) -> dict:
 
 
 def add_jira_comment(issue_key: str, comment: str) -> dict:
-    """Add a comment to a Jira issue via the REST API."""
-    url = f"{JIRA_BASE_URL}/rest/api/3/issue/{issue_key}/comment"
-    payload = {
-        "body": {
-            "type": "doc",
-            "version": 1,
-            "content": [
-                {
-                    "type": "paragraph",
-                    "content": [{"type": "text", "text": comment}],
-                }
-            ],
+    try:
+        """Add a comment to a Jira issue via the REST API."""
+        url = f"{JIRA_BASE_URL}/rest/api/3/issue/{issue_key}/comment"
+        payload = {
+            "body": {
+                "type": "doc",
+                "version": 1,
+                "content": [
+                    {
+                        "type": "paragraph",
+                        "content": [{"type": "text", "text": comment}],
+                    }
+                ],
+            }
         }
-    }
-    response = requests.post(
-        url,
-        json=payload,
-        auth=(JIRA_EMAIL, JIRA_API_TOKEN),
-        headers={"Accept": "application/json"},
-    )
-    response.raise_for_status()
-    return response.json()
+        response = requests.post(
+            url,
+            json=payload,
+            auth=(JIRA_EMAIL, JIRA_API_TOKEN),
+            headers={"Accept": "application/json"},
+        )
+        response.raise_for_status()
+        return response.json()
+    except Exception as e:
+        print(f"Failed to insert comment to {issue_key}: {str(e)}")
 
 
 if __name__ == "__main__":
